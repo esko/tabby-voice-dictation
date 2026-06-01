@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Example external dictation helper contract for tabby-voice-dictation.
+# The Tabby plugin executes this command and expects the final transcript on stdout.
+# Replace the body with your real ASR implementation: whisper.cpp, faster-whisper,
+# a ChromeOS-side speech bridge, or a cloud ASR client.
+
+set -euo pipefail
+
+# Demo transcript for initial plugin testing:
+printf 'echo hello from voice dictation'
