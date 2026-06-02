@@ -26,6 +26,13 @@ class PCMProcessor extends AudioWorkletProcessor {
     const channelData = input[0]
     if (!channelData) return true
 
+    // Live amplitude (RMS of this render quantum, ~125/s) for UI pulsing.
+    let q = 0
+    for (let i = 0; i < channelData.length; i++) {
+      q += channelData[i] * channelData[i]
+    }
+    this.port.postMessage({ level: Math.sqrt(q / channelData.length) })
+
     for (let i = 0; i < channelData.length; i++) {
       this._buffer.push(channelData[i])
     }

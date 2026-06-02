@@ -11,6 +11,8 @@ export interface StreamHandlers {
   onCommitted (text: string): void
   onError (err: Error): void
   onClose (): void
+  /** Live microphone amplitude (RMS, ~0–0.3 for speech) for UI feedback. */
+  onLevel? (level: number): void
 }
 
 /**
@@ -114,6 +116,10 @@ export class ElevenLabsBackend {
     const workletNode = new AudioWorkletNode(audioContext, 'pcm-processor')
     this.workletNode = workletNode
     workletNode.port.onmessage = ({ data }: MessageEvent) => {
+      if (typeof data.level === 'number') {
+        this.handlers?.onLevel?.(data.level)
+        return
+      }
       if (this.muted || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
         return
       }

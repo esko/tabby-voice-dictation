@@ -101,7 +101,7 @@ export class VoiceDictationService {
     const targetTab = this.injector.getActiveTab()
     if (!this.injector.isTerminalTab(targetTab)) {
       this.logger.warn('Active tab is not a terminal tab; refusing to start dictation')
-      this.overlay.show('Voice dictation: active tab is not a terminal')
+      this.overlay.show('Open a terminal tab first', { error: true })
       setTimeout(() => this.overlay.hide(), 2000)
       return
     }
@@ -126,7 +126,7 @@ export class VoiceDictationService {
     this.streamTab = targetTab
     this.liveTyped = ''
     if (cfg.showStatusOverlay) {
-      this.overlay.show('Voice dictation: listening…')
+      this.overlay.show('Listening', { busy: true })
     }
 
     await this.elevenLabs.start(cfg, {
@@ -147,6 +147,7 @@ export class VoiceDictationService {
           }
         }
       },
+      onLevel: level => this.overlay.setLevel(level),
       onError: err => this.handleError(err),
       onClose: () => {
         // Server closed the session unexpectedly.
@@ -175,11 +176,8 @@ export class VoiceDictationService {
 
   private async stopStreaming (): Promise<void> {
     await this.elevenLabs.stop()
+    // resetState() slides the overlay out — no terminal "Stopped" card.
     this.resetState()
-    if (this.getConfig().showStatusOverlay) {
-      this.overlay.show('Voice dictation: stopped')
-      setTimeout(() => this.overlay.hide(), 1000)
-    }
   }
 
   // ── One-shot backends (externalCommand / webSpeech) ───────────────────────
@@ -187,7 +185,7 @@ export class VoiceDictationService {
   private async runOneShot (cfg: VoiceDictationConfig, targetTab: any): Promise<void> {
     this.running = true
     if (cfg.showStatusOverlay) {
-      this.overlay.show('Voice dictation: listening…')
+      this.overlay.show('Listening', { busy: true })
     }
 
     try {
@@ -221,7 +219,7 @@ export class VoiceDictationService {
 
       const ok = this.injector.sendToTerminal(targetTab, formatted)
       if (ok && cfg.showStatusOverlay) {
-        this.overlay.show('Voice dictation: inserted')
+        this.overlay.show('Inserted')
         setTimeout(() => this.overlay.hide(), 1000)
       }
     } finally {
@@ -258,7 +256,7 @@ export class VoiceDictationService {
     const message = error instanceof Error ? error.message : String(error)
     this.logger.error(message)
     this.elevenLabs.cancel()
-    this.overlay.show(`Voice dictation error: ${message}`)
+    this.overlay.show(message, { error: true })
     setTimeout(() => this.overlay.hide(), 4000)
     this.running = false
     this.streaming = false
