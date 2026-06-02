@@ -164,16 +164,37 @@ export class ElevenLabsBackend {
    */
   private async openWebSocket (config: VoiceDictationConfig): Promise<void> {
     const token = await this.fetchToken(config.elevenLabsApiKey)
-    // No `language` param is sent: ElevenLabs Scribe realtime auto-detects the
-    // spoken language per utterance, so the session is multilingual by default.
     // The realtime Scribe endpoint uses a fixed model and rejects a `model_id`
     // query param with `invalid_request`, so it is intentionally omitted.
+    //
+    // Verified params (from https://elevenlabs.io/docs/api-reference/speech-to-text/v-1-speech-to-text-realtime.md):
+    //   language_code  – ISO 639-1 or 639-3 code; omit to auto-detect (multilingual).
+    //   keyterms       – repeated query param, one value per term; biases the model.
+    // The default path (no language_code, no keyterms) is byte-for-byte unchanged.
     const params = new URLSearchParams({
       token,
       encoding: 'pcm_s16le',
       sample_rate: String(SAMPLE_RATE),
       commit_strategy: 'vad',
     })
+
+    // Language lock: only send when the user has explicitly set a language code.
+    if (config.elevenLabsLanguage) {
+      params.set('language_code', config.elevenLabsLanguage)
+    }
+
+    // Keyterm biasing: send each term as a separate repeated `keyterms` param.
+    // URLSearchParams.append('keyterms', ...) produces keyterms=foo&keyterms=bar
+    // which matches the array encoding the AsyncAPI spec uses.
+    if (config.elevenLabsKeyterms) {
+      const terms = config.elevenLabsKeyterms
+        .split(',')
+        .map(t => t.trim())
+        .filter(t => t.length > 0)
+      for (const term of terms) {
+        params.append('keyterms', term)
+      }
+    }
 
     return new Promise<void>((resolve, reject) => {
       const ws = new WebSocket(`${REALTIME_URL}?${params.toString()}`)
@@ -199,7 +220,17 @@ export class ElevenLabsBackend {
           case 'partial_transcript':
             if (msg.text) this.handlers?.onPartial(msg.text)
             break
-          case 'committed_transcript':
+          case 'committed_transcript': {
+            // TODO: verify ElevenLabs API support — confidence gating.
+            // The SDK docs (javascript-scribe.md) document committed_transcript as
+            // { text: string } only. No confidence/probability field is exposed in
+            // the current API reference. When/if ElevenLabs adds a confidence field
+            // (e.g. msg.confidence or msg.probability), wire it here:
+            //
+            //   const minConf = this.activeConfig?.elevenLabsMinConfidence ?? 0
+            //   if (minConf > 0 && typeof msg.confidence === 'number' && msg.confidence < minConf) {
+            //     break  // drop below-threshold segment
+            //   }
             if (msg.text) this.handlers?.onCommitted(msg.text)
             if (this.flushResolve) {
               const r = this.flushResolve
@@ -207,6 +238,7 @@ export class ElevenLabsBackend {
               r()
             }
             break
+          }
           default:
             // invalid_request, error, or any unexpected control message.
             if (/error|invalid/i.test(msg.message_type || '')) {

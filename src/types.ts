@@ -19,6 +19,13 @@ export interface VoiceDictationConfig {
   activation: Activation
   dictationMode?: DictationMode
   spokenPunctuation?: boolean
+  // Transcription quality controls (ElevenLabs only)
+  /** ISO 639-1 or 639-3 language code; empty string = auto-detect (multilingual). */
+  elevenLabsLanguage?: string
+  /** Comma-separated list of keyterms to bias the model towards. */
+  elevenLabsKeyterms?: string
+  /** Drop committed segments below this confidence threshold (0 = off/disabled). */
+  elevenLabsMinConfidence?: number
 }
 
 export const DEFAULT_VOICE_CONFIG: VoiceDictationConfig = {
