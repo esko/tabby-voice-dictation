@@ -15,18 +15,74 @@ import { SettingsTabProvider } from 'tabby-settings'
             </button>
           </li>
           <li class="nav-item">
-            <button class="nav-link" [class.active]="activeTab === 'elevenLabs'" (click)="activeTab = 'elevenLabs'">
-              ElevenLabs Realtime
-            </button>
-          </li>
-          <li class="nav-item">
-            <button class="nav-link" [class.active]="activeTab === 'other'" (click)="activeTab = 'other'">
-              Other Backends
+            <button class="nav-link" [class.active]="activeTab === 'dictation'" (click)="activeTab = 'dictation'">
+              Dictation
             </button>
           </li>
         </ul>
 
         <div *ngIf="activeTab === 'general'">
+          <h3 class="mb-3">Speech Backend</h3>
+
+          <div class="form-group mb-3">
+            <label>Speech Recognition Backend</label>
+            <select class="form-control" [(ngModel)]="config.store.voiceDictation.backend" (ngModelChange)="save()">
+              <option value="elevenLabs">ElevenLabs Realtime (Streaming)</option>
+              <option value="externalCommand">External CLI Command</option>
+              <option value="webSpeech">Web Speech API (Experimental)</option>
+            </select>
+          </div>
+
+          <div class="form-group mb-3" *ngIf="config.store.voiceDictation.backend === 'elevenLabs'">
+            <label>ElevenLabs API Key</label>
+            <input type="password" class="form-control" autocomplete="off" [(ngModel)]="elevenLabsApiKey" (ngModelChange)="save()" />
+            <small class="form-text text-muted" *ngIf="!vault.isEnabled()">
+              Stored in plain text in your Tabby <code>config.yaml</code>. Used to mint a single-use realtime token.
+            </small>
+            <small class="form-text text-muted" *ngIf="vault.isEnabled() && vault.isOpen()">
+              Stored securely in Tabby's encrypted Vault.
+            </small>
+            <small class="form-text text-muted" *ngIf="vault.isEnabled() && !vault.isOpen()">
+              Vault is locked. Storing in plain text config until unlocked.
+            </small>
+          </div>
+
+          <div class="form-group mb-3" *ngIf="config.store.voiceDictation.backend === 'elevenLabs'">
+            <label>Microphone</label>
+            <select class="form-control" [(ngModel)]="config.store.voiceDictation.elevenLabsInputDeviceId" (ngModelChange)="save()">
+              <option value="">System default</option>
+              <option *ngFor="let device of audioInputDevices; let i = index" [value]="device.deviceId">
+                {{ device.label || 'Microphone ' + (i + 1) }}
+              </option>
+            </select>
+            <small class="form-text text-muted">
+              Device labels are only shown after microphone permission has been granted once.
+            </small>
+          </div>
+
+          <div class="form-group mb-3" *ngIf="config.store.voiceDictation.backend === 'elevenLabs'">
+            <label>Silence Auto-Stop Timeout (seconds)</label>
+            <input type="number" class="form-control" placeholder="0" [(ngModel)]="config.store.voiceDictation.silenceTimeout" (ngModelChange)="save()" />
+            <small class="form-text text-muted">
+              Automatically stop the streaming session after N seconds of silence. Set to 0 to disable.
+            </small>
+          </div>
+
+          <div class="form-group mb-3" *ngIf="config.store.voiceDictation.backend === 'externalCommand'">
+            <label>External CLI Command</label>
+            <input type="text" class="form-control" [(ngModel)]="config.store.voiceDictation.externalCommand" (ngModelChange)="save()" />
+            <small class="form-text text-muted">
+              The CLI tool must capture audio, transcribe it, print the text to stdout, and exit. Use <code>~</code> for home directory.
+            </small>
+          </div>
+
+          <div class="form-group mb-3" *ngIf="config.store.voiceDictation.backend === 'externalCommand'">
+            <label>External Command Timeout (ms)</label>
+            <input type="number" class="form-control" [(ngModel)]="config.store.voiceDictation.externalCommandTimeoutMs" (ngModelChange)="save()" />
+          </div>
+
+          <h3 class="mb-3 mt-4">Interface</h3>
+
           <div class="form-group mb-3">
             <label>Hotkey Activation</label>
             <select class="form-control" [(ngModel)]="config.store.voiceDictation.activation" (ngModelChange)="save()">
@@ -38,14 +94,14 @@ import { SettingsTabProvider } from 'tabby-settings'
             </small>
           </div>
 
-          <div class="form-group mb-3">
-            <label>Speech Recognition Backend</label>
-            <select class="form-control" [(ngModel)]="config.store.voiceDictation.backend" (ngModelChange)="save()">
-              <option value="elevenLabs">ElevenLabs Realtime (Streaming)</option>
-              <option value="externalCommand">External CLI Command</option>
-              <option value="webSpeech">Web Speech API (Experimental)</option>
-            </select>
+          <div class="form-check mb-3">
+            <input type="checkbox" class="form-check-input" id="showStatusOverlay" [(ngModel)]="config.store.voiceDictation.showStatusOverlay" (ngModelChange)="save()" />
+            <label class="form-check-label" for="showStatusOverlay">Show dictation status overlay in terminal</label>
           </div>
+        </div>
+
+        <div *ngIf="activeTab === 'dictation'">
+          <h3 class="mb-3">Input & Delivery</h3>
 
           <div class="form-group mb-3">
             <label>Insert Mode</label>
@@ -54,6 +110,9 @@ import { SettingsTabProvider } from 'tabby-settings'
               <option value="insertOnly">Insert Directly</option>
               <option value="submit">Insert and Auto-Submit (Enter)</option>
             </select>
+            <small class="form-text text-muted" *ngIf="config.store.voiceDictation.backend === 'elevenLabs'">
+              Note: ElevenLabs Realtime streaming mode inserts text live as you speak. The preview/auto-submit options are ignored in streaming mode.
+            </small>
           </div>
 
           <div class="form-check mb-3">
@@ -68,10 +127,14 @@ import { SettingsTabProvider } from 'tabby-settings'
             </label>
           </div>
 
-          <div class="form-check mb-3">
-            <input type="checkbox" class="form-check-input" id="showStatusOverlay" [(ngModel)]="config.store.voiceDictation.showStatusOverlay" (ngModelChange)="save()" />
-            <label class="form-check-label" for="showStatusOverlay">Show dictation status overlay in terminal</label>
+          <div class="form-check mb-3" *ngIf="config.store.voiceDictation.backend === 'elevenLabs'">
+            <input type="checkbox" class="form-check-input" id="elevenLabsStreamPartials" [(ngModel)]="config.store.voiceDictation.elevenLabsStreamPartials" (ngModelChange)="save()" />
+            <label class="form-check-label" for="elevenLabsStreamPartials">
+              Stream partial results live into the terminal (types as you speak and revises with backspaces; off = insert each phrase on a pause)
+            </label>
           </div>
+
+          <h3 class="mb-3 mt-4">Text Formatting</h3>
 
           <div class="form-group mb-3">
             <label>Dictation Mode</label>
@@ -90,24 +153,8 @@ import { SettingsTabProvider } from 'tabby-settings'
               Spoken Punctuation (convert "comma", "period", "question mark", etc. to their symbols)
             </label>
           </div>
-        </div>
 
-        <div *ngIf="activeTab === 'elevenLabs'">
-          <div class="form-group mb-3">
-            <label>ElevenLabs API Key</label>
-            <input type="password" class="form-control" autocomplete="off" [(ngModel)]="elevenLabsApiKey" (ngModelChange)="save()" />
-            <small class="form-text text-muted" *ngIf="!vault.isEnabled()">
-              Stored in plain text in your Tabby <code>config.yaml</code>. Used to mint a single-use realtime token.
-            </small>
-            <small class="form-text text-muted" *ngIf="vault.isEnabled() && vault.isOpen()">
-              Stored securely in Tabby's encrypted Vault.
-            </small>
-            <small class="form-text text-muted" *ngIf="vault.isEnabled() && !vault.isOpen()">
-              Vault is locked. Storing in plain text config until unlocked.
-            </small>
-          </div>
-
-          <div class="form-group mb-3">
+          <div class="form-group mb-3" *ngIf="config.store.voiceDictation.backend === 'elevenLabs'">
             <label>Language Lock</label>
             <input type="text" class="form-control" placeholder="auto-detect" [(ngModel)]="config.store.voiceDictation.elevenLabsLanguage" (ngModelChange)="save()" />
             <small class="form-text text-muted">
@@ -115,7 +162,7 @@ import { SettingsTabProvider } from 'tabby-settings'
             </small>
           </div>
 
-          <div class="form-group mb-3">
+          <div class="form-group mb-3" *ngIf="config.store.voiceDictation.backend === 'elevenLabs'">
             <label>Keyterms</label>
             <input type="text" class="form-control" [(ngModel)]="config.store.voiceDictation.elevenLabsKeyterms" (ngModelChange)="save()" />
             <small class="form-text text-muted">
@@ -123,66 +170,18 @@ import { SettingsTabProvider } from 'tabby-settings'
             </small>
           </div>
 
-          <div class="form-check mb-3">
-            <input type="checkbox" class="form-check-input" id="elevenLabsStreamPartials" [(ngModel)]="config.store.voiceDictation.elevenLabsStreamPartials" (ngModelChange)="save()" />
-            <label class="form-check-label" for="elevenLabsStreamPartials">
-              Stream partial results live into the terminal (types as you speak and revises with backspaces; off = insert each phrase on a pause)
-            </label>
-          </div>
-
-          <div class="form-check mb-3">
+          <div class="form-check mb-3" *ngIf="config.store.voiceDictation.backend === 'elevenLabs'">
             <input type="checkbox" class="form-check-input" id="elevenLabsNoiseGate" [(ngModel)]="config.store.voiceDictation.elevenLabsNoiseGate" (ngModelChange)="save()" />
             <label class="form-check-label" for="elevenLabsNoiseGate">
               Client-side noise gate (skip near-silent audio chunks before sending)
             </label>
           </div>
 
-          <div class="form-group mb-3">
-            <label>Microphone</label>
-            <select class="form-control" [(ngModel)]="config.store.voiceDictation.elevenLabsInputDeviceId" (ngModelChange)="save()">
-              <option value="">System default</option>
-              <option *ngFor="let device of audioInputDevices; let i = index" [value]="device.deviceId">
-                {{ device.label || 'Microphone ' + (i + 1) }}
-              </option>
-            </select>
-            <small class="form-text text-muted">
-              Device labels are only shown after microphone permission has been granted once.
-            </small>
-          </div>
-
-          <div class="form-group mb-3">
-            <label>Silence Auto-Stop Timeout (seconds)</label>
-            <input type="number" class="form-control" placeholder="0" [(ngModel)]="config.store.voiceDictation.silenceTimeout" (ngModelChange)="save()" />
-            <small class="form-text text-muted">
-              Automatically stop the streaming session after N seconds of silence. Set to 0 to disable.
-            </small>
-          </div>
-
-          <div class="form-text text-muted mb-3">
-            Streaming mode inserts text live as you speak and auto-detects the spoken language (multilingual).
-            The Insert Mode preview/auto-submit options under the General tab are ignored.
-          </div>
-        </div>
-
-        <div *ngIf="activeTab === 'other'">
-          <div class="form-group mb-3">
-            <label>External CLI Command</label>
-            <input type="text" class="form-control" [(ngModel)]="config.store.voiceDictation.externalCommand" (ngModelChange)="save()" />
-            <small class="form-text text-muted">
-              The CLI tool must capture audio, transcribe it, print the text to stdout, and exit. Use <code>~</code> for home directory.
-            </small>
-          </div>
-
-          <div class="form-group mb-3">
-            <label>External Command Timeout (ms)</label>
-            <input type="number" class="form-control" [(ngModel)]="config.store.voiceDictation.externalCommandTimeoutMs" (ngModelChange)="save()" />
-          </div>
-
-          <div class="form-group mb-3">
+          <div class="form-group mb-3" *ngIf="config.store.voiceDictation.backend !== 'elevenLabs'">
             <label>ASR Language</label>
             <input type="text" class="form-control" [(ngModel)]="config.store.voiceDictation.language" (ngModelChange)="save()" />
             <small class="form-text text-muted">
-              Language code for Web Speech API recognition, e.g. <code>en-US</code>, <code>fi-FI</code>.
+              Language code for Web Speech API / CLI recognition, e.g. <code>en-US</code>, <code>fi-FI</code>.
             </small>
           </div>
         </div>
