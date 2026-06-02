@@ -11,6 +11,7 @@
     "speech-to-text"
   ],
   "license": "MIT",
+  "author": "Antigravity",
   "main": "dist/index.js",
   "typings": "dist/index.d.ts",
   "files": [
@@ -22,7 +23,7 @@
     "watch": "webpack --mode development --watch",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
-    "test": "npm run typecheck",
+    "test": "npm run typecheck && npx tsc --module commonjs --outDir dist-test && node --test dist-test/test/formatter.test.js",
     "package": "npm pack"
   },
   "peerDependencies": {

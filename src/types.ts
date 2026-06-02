@@ -1,5 +1,6 @@
-export type VoiceBackend = 'webSpeech' | 'externalCommand'
+export type VoiceBackend = 'elevenLabs' | 'webSpeech' | 'externalCommand'
 export type InsertMode = 'insertOnly' | 'preview' | 'submit'
+export type Activation = 'toggle' | 'pushToTalk'
 
 export interface VoiceDictationConfig {
   backend: VoiceBackend
@@ -10,10 +11,14 @@ export interface VoiceDictationConfig {
   externalCommand: string
   externalCommandTimeoutMs: number
   showStatusOverlay: boolean
+  elevenLabsApiKey: string
+  elevenLabsNoiseGate: boolean
+  elevenLabsStreamPartials: boolean
+  activation: Activation
 }
 
 export const DEFAULT_VOICE_CONFIG: VoiceDictationConfig = {
-  backend: 'externalCommand',
+  backend: 'elevenLabs',
   language: 'en-US',
   insertMode: 'preview',
   appendSpace: true,
@@ -21,4 +26,8 @@ export const DEFAULT_VOICE_CONFIG: VoiceDictationConfig = {
   externalCommand: '~/.local/bin/tabby-dictate --single-utterance',
   externalCommandTimeoutMs: 30000,
   showStatusOverlay: true,
+  elevenLabsApiKey: '',
+  elevenLabsNoiseGate: true,
+  elevenLabsStreamPartials: true,
+  activation: 'toggle',
 }

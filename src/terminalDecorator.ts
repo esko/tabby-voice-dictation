@@ -12,7 +12,7 @@ export class VoiceTerminalDecorator extends TerminalDecorator {
     super()
   }
 
-  attach (_tab: BaseTerminalTabComponent): void {
+  attach (_tab: BaseTerminalTabComponent<any>): void {
     // Reserved for future per-terminal UI/status integration.
     void this.voiceDictation
   }
