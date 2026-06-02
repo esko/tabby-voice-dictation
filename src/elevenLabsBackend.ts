@@ -6,6 +6,9 @@ const TOKEN_URL = 'https://api.elevenlabs.io/v1/single-use-token/realtime_scribe
 const REALTIME_URL = 'wss://api.elevenlabs.io/v1/speech-to-text/realtime'
 const SAMPLE_RATE = 16000
 
+// Backoff delays (ms) for successive reconnect attempts.
+const RECONNECT_DELAYS = [400, 1000, 2000]
+
 export interface StreamHandlers {
   onPartial (text: string): void
   onCommitted (text: string): void
@@ -22,6 +25,13 @@ export interface StreamHandlers {
  * this opens a long-lived session: it streams microphone PCM over a WebSocket
  * and reports `partial_transcript` / `committed_transcript` events through the
  * supplied handlers until `stop()` or `cancel()` is called.
+ *
+ * On transient WebSocket drops (abnormal close codes while `active` is true and
+ * `stopping` is false) the backend automatically reconnects: it mints a fresh
+ * single-use token and re-opens the WebSocket WITHOUT tearing down the audio
+ * pipeline.  Up to three attempts are made with increasing back-off (400 ms,
+ * 1 s, 2 s).  If all attempts fail, `handlers.onError` is called and the
+ * session is torn down.
  */
 export class ElevenLabsBackend {
   private ws: WebSocket | null = null
@@ -32,6 +42,10 @@ export class ElevenLabsBackend {
   private handlers: StreamHandlers | null = null
   private active = false
   private muted = false
+  // Set to true in stop()/cancel() so the onclose handler does NOT reconnect.
+  private stopping = false
+  // Holds the config for the duration of an active session (needed for reconnect).
+  private activeConfig: VoiceDictationConfig | null = null
   // Resolves once the final committed_transcript arrives after a stop() commit,
   // so we don't close the socket before the last utterance is returned.
   private flushResolve: (() => void) | null = null
@@ -54,10 +68,12 @@ export class ElevenLabsBackend {
     this.handlers = handlers
     this.active = true
     this.muted = false
+    this.stopping = false
+    this.activeConfig = config
 
     try {
       await this.startAudioPipeline(config)
-      await this.connectWebSocket(config)
+      await this.openWebSocket(config)
     } catch (err) {
       this.teardown()
       throw err
@@ -66,6 +82,7 @@ export class ElevenLabsBackend {
 
   /** Flush a final commit, wait for the last transcript, then tear down. */
   async stop (): Promise<void> {
+    this.stopping = true
     this.muted = true
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       // Send a short silence buffer with commit:true to force-flush the last utterance.
@@ -94,6 +111,7 @@ export class ElevenLabsBackend {
 
   /** Immediate abort with no final commit. */
   cancel (): void {
+    this.stopping = true
     this.teardown()
   }
 
@@ -139,7 +157,12 @@ export class ElevenLabsBackend {
     workletNode.connect(audioContext.destination)
   }
 
-  private async connectWebSocket (config: VoiceDictationConfig): Promise<void> {
+  /**
+   * Open a new WebSocket, wire all event handlers, and resolve once the server
+   * sends `session_started`.  The mic/AudioContext/worklet are left intact so
+   * the same method can be called for the initial connection and for reconnects.
+   */
+  private async openWebSocket (config: VoiceDictationConfig): Promise<void> {
     const token = await this.fetchToken(config.elevenLabsApiKey)
     // No `language` param is sent: ElevenLabs Scribe realtime auto-detects the
     // spoken language per utterance, so the session is multilingual by default.
@@ -205,18 +228,61 @@ export class ElevenLabsBackend {
 
       ws.onclose = ({ code, reason }: CloseEvent) => {
         this.ws = null
+
         if (!started) {
+          // Failed before session_started — surface immediately.
           reject(new Error(`ElevenLabs session closed before start (${code}${reason ? ' ' + reason : ''})`))
-        } else if (this.active) {
-          // Abnormal close mid-session → surface it; normal close → quiet finish.
-          if (code !== 1000 && code !== 1005) {
-            this.handlers?.onError(new Error(`ElevenLabs session closed (${code}${reason ? ' ' + reason : ''})`))
-          } else {
-            this.handlers?.onClose()
-          }
+          return
         }
+
+        if (!this.active || this.stopping) {
+          // User-initiated stop/cancel — do nothing; teardown handles the rest.
+          return
+        }
+
+        // Transient drop during an active session → attempt reconnect.
+        this.scheduleReconnect(0)
       }
     })
+  }
+
+  /**
+   * Attempt to re-open the WebSocket after a transient drop.
+   *
+   * Retries up to RECONNECT_DELAYS.length times with increasing back-off.
+   * If all attempts fail (or stop()/cancel() is called in the meantime), calls
+   * handlers.onError and tears down.
+   */
+  private scheduleReconnect (attempt: number): void {
+    if (!this.active || this.stopping || !this.activeConfig) {
+      // stop()/cancel() was called while a reconnect was pending — bail out.
+      return
+    }
+
+    const delay = RECONNECT_DELAYS[attempt]
+    if (delay === undefined) {
+      // Exhausted all attempts.
+      this.handlers?.onError(new Error(
+        `ElevenLabs: WebSocket dropped and could not reconnect after ${RECONNECT_DELAYS.length} attempts`,
+      ))
+      this.teardown()
+      return
+    }
+
+    const config = this.activeConfig
+    setTimeout(() => {
+      // Re-check after the delay in case stop()/cancel() was called while waiting.
+      if (!this.active || this.stopping) {
+        return
+      }
+
+      this.openWebSocket(config).then(() => {
+        // Reconnected successfully — nothing else to do; audio keeps flowing.
+      }).catch(() => {
+        // This attempt failed; schedule the next one.
+        this.scheduleReconnect(attempt + 1)
+      })
+    }, delay)
   }
 
   private async fetchToken (apiKey: string): Promise<string> {
@@ -240,6 +306,7 @@ export class ElevenLabsBackend {
   private teardown (): void {
     this.active = false
     this.muted = true
+    this.activeConfig = null
     if (this.flushResolve) {
       const r = this.flushResolve
       this.flushResolve = null
