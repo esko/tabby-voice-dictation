@@ -13,15 +13,42 @@ export class TerminalInjectorService {
     this.logger = log.create('voice-dictation-injector')
   }
 
-  sendToActiveTerminal (text: string): boolean {
-    const tab = this.app.activeTab
+  getActiveTab (): any {
+    return this.app.activeTab
+  }
 
-    if (!(tab instanceof BaseTerminalTabComponent)) {
-      this.logger.warn('Active tab is not a terminal tab; refusing to inject transcript')
+  isTerminalTab (tab: any): boolean {
+    while (tab && (tab as any).focusedTab) {
+      tab = (tab as any).focusedTab
+    }
+    return !!(tab && (
+      tab instanceof BaseTerminalTabComponent ||
+      (tab.constructor && tab.constructor.name.toLowerCase().includes('terminal')) ||
+      typeof (tab as any).sendInput === 'function'
+    ))
+  }
+
+  sendToTerminal (tab: any, text: string): boolean {
+    while (tab && (tab as any).focusedTab) {
+      tab = (tab as any).focusedTab
+    }
+
+    const isTerminal = tab && (
+      tab instanceof BaseTerminalTabComponent ||
+      (tab.constructor && tab.constructor.name.toLowerCase().includes('terminal')) ||
+      typeof (tab as any).sendInput === 'function'
+    )
+
+    if (!isTerminal) {
+      this.logger.warn('Target tab is not a terminal tab; refusing to inject transcript')
       return false
     }
 
-    tab.sendInput(text)
+    ;(tab as any).sendInput(text)
     return true
+  }
+
+  sendToActiveTerminal (text: string): boolean {
+    return this.sendToTerminal(this.app.activeTab, text)
   }
 }

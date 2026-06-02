@@ -13,6 +13,12 @@ module.exports = {
   },
   externals: {
     '@angular/core': 'commonjs @angular/core',
+    '@angular/common': 'commonjs @angular/common',
+    '@angular/forms': 'commonjs @angular/forms',
+    '@angular/platform-browser': 'commonjs @angular/platform-browser',
+    '@angular/animations': 'commonjs @angular/animations',
+    rxjs: 'commonjs rxjs',
+    'rxjs/operators': 'commonjs rxjs/operators',
     'tabby-core': 'commonjs tabby-core',
     'tabby-terminal': 'commonjs tabby-terminal',
     'tabby-settings': 'commonjs tabby-settings',
