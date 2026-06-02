@@ -136,6 +136,9 @@ export class VoiceDictationService {
         } else if (cfg.showStatusOverlay) {
           this.overlay.show(text)
         }
+        if (cfg.showStatusOverlay) {
+          this.overlay.setInterim(text)
+        }
       },
       onCommitted: text => {
         if (cfg.elevenLabsStreamPartials) {
@@ -145,6 +148,9 @@ export class VoiceDictationService {
           if (formatted) {
             this.injector.sendToTerminal(this.streamTab, formatted)
           }
+        }
+        if (cfg.showStatusOverlay) {
+          this.overlay.setInterim('')
         }
       },
       onLevel: level => this.overlay.setLevel(level),
@@ -242,6 +248,7 @@ export class VoiceDictationService {
     this.streaming = false
     this.streamTab = null
     this.liveTyped = ''
+    this.overlay.setInterim('')
     this.overlay.hide()
   }
 

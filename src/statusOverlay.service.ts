@@ -39,8 +39,11 @@ export class StatusOverlayService {
           </span>
         </div>
         <div class="vd-body">
-          <span class="vd-text"></span>
-          <span class="vd-dots"><i></i><i></i><i></i></span>
+          <div class="vd-label-row">
+            <span class="vd-text"></span>
+            <span class="vd-dots"><i></i><i></i><i></i></span>
+          </div>
+          <span class="vd-interim"></span>
         </div>
       `
       document.body.appendChild(this.el)
@@ -74,6 +77,7 @@ export class StatusOverlayService {
   }
 
   hide (): void {
+    this.setInterim('')
     this.stopPulse()
     this.targetLevel = 0
     this.displayLevel = 0
@@ -85,6 +89,19 @@ export class StatusOverlayService {
     // Slide/fade out, then remove.
     el.classList.add('vd-hiding')
     setTimeout(() => el.remove(), 280)
+  }
+
+  /** Display rolling partial/interim transcript text below the main label. */
+  setInterim (text: string): void {
+    if (!this.el) {
+      return
+    }
+    const interimEl = this.el.querySelector('.vd-interim')
+    if (!interimEl) {
+      return
+    }
+    interimEl.textContent = text
+    ;(interimEl as HTMLElement).style.display = text ? '' : 'none'
   }
 
   private ensurePulse (): void {
@@ -233,9 +250,15 @@ export class StatusOverlayService {
       }
       .vd-body {
         display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 3px;
+        min-width: 0;
+      }
+      .vd-label-row {
+        display: flex;
         align-items: center;
         gap: 8px;
-        min-width: 0;
       }
       .vd-text {
         max-width: 340px;
@@ -251,6 +274,19 @@ export class StatusOverlayService {
         gap: 4px;
       }
       .vd-card.vd-busy .vd-dots { display: inline-flex; }
+      /* Rolling interim/partial transcript — visually secondary */
+      .vd-interim {
+        display: none;
+        max-width: 260px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 11px;
+        font-weight: 440;
+        opacity: 0.55;
+        letter-spacing: 0.01em;
+        color: rgba(var(--vd-accent), 1);
+      }
       .vd-dots i {
         width: 4px;
         height: 4px;
