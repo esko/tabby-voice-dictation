@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core'
-import { ConfigService, HotkeysService, LogService, Logger, SelectorService } from 'tabby-core'
-import { VoiceDictationConfig, DEFAULT_VOICE_CONFIG } from './types'
+import { ConfigService, HotkeysService, LogService, Logger, SelectorService, VaultService } from 'tabby-core'
+import { Subject } from 'rxjs'
+import { VoiceDictationConfig, DEFAULT_VOICE_CONFIG, StreamingBackend } from './types'
 import { formatTranscript, formatPartial, reconcileKeystrokes, detectScratchThat } from './transcriptFormatter'
 import { TerminalInjectorService } from './terminalInjector'
 import { WebSpeechBackend } from './webSpeechBackend'
@@ -10,6 +11,7 @@ import { StatusOverlayService } from './statusOverlay.service'
 
 @Injectable({ providedIn: 'root' })
 export class VoiceDictationService {
+  readonly stateChanged$ = new Subject<void>()
   private logger: Logger
   private running = false
   private streaming = false
@@ -23,7 +25,11 @@ export class VoiceDictationService {
   private lastSegment = ''
   private webSpeech = new WebSpeechBackend()
   private externalCommand = new ExternalCommandBackend()
-  private elevenLabs = new ElevenLabsBackend()
+  private activeBackend: StreamingBackend | null = null
+  private streamingBackends: Record<string, StreamingBackend> = {
+    elevenLabs: new ElevenLabsBackend(),
+  }
+  private lastSpeechTime = 0
   // Guards against OS key-repeat: a held hotkey fires hotkey$ many times per
   // second; we act once on the first event and ignore the rest until release.
   private keyHeld = false
@@ -33,6 +39,7 @@ export class VoiceDictationService {
     private injector: TerminalInjectorService,
     private overlay: StatusOverlayService,
     private selector: SelectorService,
+    private vault: VaultService,
     hotkeys: HotkeysService,
     log: LogService,
   ) {
@@ -82,7 +89,7 @@ export class VoiceDictationService {
     }
   }
 
-  async toggle (): Promise<void> {
+  async toggle (targetTab?: any): Promise<void> {
     if (this.running) {
       if (this.streaming) {
         await this.stopStreaming()
@@ -91,18 +98,22 @@ export class VoiceDictationService {
       }
       return
     }
-    await this.start()
+    await this.start(targetTab)
   }
 
   cancel (): void {
     this.webSpeech.cancel()
     this.externalCommand.cancel()
-    this.elevenLabs.cancel()
+    for (const backend of Object.values(this.streamingBackends)) {
+      backend.cancel()
+    }
     this.resetState()
   }
 
-  private async start (): Promise<void> {
-    const targetTab = this.injector.getActiveTab()
+  private async start (targetTab?: any): Promise<void> {
+    if (!targetTab) {
+      targetTab = this.injector.getActiveTab()
+    }
     if (!this.injector.isTerminalTab(targetTab)) {
       this.logger.warn('Active tab is not a terminal tab; refusing to start dictation')
       this.overlay.show('Open a terminal tab first', { error: true })
@@ -110,31 +121,42 @@ export class VoiceDictationService {
       return
     }
 
-    const cfg = this.getConfig()
+    try {
+      const cfg = await this.resolveConfigSecrets(this.getConfig())
 
-    if (cfg.backend === 'elevenLabs') {
-      await this.startStreaming(cfg, targetTab)
-      return
+      if (cfg.backend in this.streamingBackends) {
+        await this.startStreaming(cfg.backend, cfg, targetTab)
+        return
+      }
+
+      await this.runOneShot(cfg, targetTab)
+    } catch (err) {
+      this.handleError(err)
     }
-
-    await this.runOneShot(cfg, targetTab)
   }
 
-  // ── ElevenLabs commit-streaming ───────────────────────────────────────────
+  // ── Streaming Backend commit-streaming ───────────────────────────────────────────
   // The session stays open until the user toggles/cancels. `insertMode`
   // (preview/submit) does not apply here — committed chunks land live.
 
-  private async startStreaming (cfg: VoiceDictationConfig, targetTab: any): Promise<void> {
+  private async startStreaming (backendName: string, cfg: VoiceDictationConfig, targetTab: any): Promise<void> {
+    const backend = this.streamingBackends[backendName]
+    if (!backend) {
+      throw new Error(`Unsupported streaming backend: ${backendName}`)
+    }
+    this.activeBackend = backend
     this.running = true
     this.streaming = true
     this.streamTab = targetTab
     this.liveTyped = ''
     this.lastSegment = ''
+    this.lastSpeechTime = Date.now()
+    this.stateChanged$.next()
     if (cfg.showStatusOverlay) {
       this.overlay.show('Listening', { busy: true })
     }
 
-    await this.elevenLabs.start(cfg, {
+    await backend.start(cfg, {
       onPartial: text => {
         // Suppress live partial streaming when the terminal is in the alternate
         // screen buffer (vim, less, htop …) — backspace-driven edits misbehave
@@ -176,7 +198,16 @@ export class VoiceDictationService {
           this.overlay.setInterim('')
         }
       },
-      onLevel: level => this.overlay.setLevel(level),
+      onLevel: level => {
+        this.overlay.setLevel(level)
+        if (cfg.silenceTimeout && cfg.silenceTimeout > 0) {
+          if (level > 0.008) {
+            this.lastSpeechTime = Date.now()
+          } else if (Date.now() - this.lastSpeechTime > cfg.silenceTimeout * 1000) {
+            this.handleError(new Error('Silence timeout reached'))
+          }
+        }
+      },
       onError: err => this.handleError(err),
       onClose: () => {
         // Server closed the session unexpectedly.
@@ -227,7 +258,9 @@ export class VoiceDictationService {
   }
 
   private async stopStreaming (): Promise<void> {
-    await this.elevenLabs.stop()
+    if (this.activeBackend) {
+      await this.activeBackend.stop()
+    }
     // resetState() slides the overlay out — no terminal "Stopped" card.
     this.resetState()
   }
@@ -236,10 +269,13 @@ export class VoiceDictationService {
 
   private async runOneShot (cfg: VoiceDictationConfig, targetTab: any): Promise<void> {
     this.running = true
+    this.streamTab = targetTab
+    this.stateChanged$.next()
     if (cfg.showStatusOverlay) {
       this.overlay.show('Listening', { busy: true })
     }
 
+    let errorOccurred = false
     try {
       const transcript = await this.runBackend(cfg)
       if (!transcript) {
@@ -272,11 +308,15 @@ export class VoiceDictationService {
       const ok = this.injector.sendToTerminal(targetTab, formatted)
       if (ok && cfg.showStatusOverlay) {
         this.overlay.show('Inserted')
-        setTimeout(() => this.overlay.hide(), 1000)
       }
+    } catch (err) {
+      errorOccurred = true
+      throw err
     } finally {
       this.running = false
-      if (cfg.showStatusOverlay) {
+      this.streamTab = null
+      this.stateChanged$.next()
+      if (cfg.showStatusOverlay && !errorOccurred) {
         setTimeout(() => this.overlay.hide(), 1000)
       }
     }
@@ -289,14 +329,39 @@ export class VoiceDictationService {
     return this.externalCommand.dictate(cfg)
   }
 
+  isTabActive (tab: any): boolean {
+    let t = tab
+    while (t && t.focusedTab) {
+      t = t.focusedTab
+    }
+    let active = this.streamTab
+    while (active && active.focusedTab) {
+      active = active.focusedTab
+    }
+    return this.running && t === active
+  }
+
   private resetState (): void {
     this.running = false
     this.streaming = false
     this.streamTab = null
     this.liveTyped = ''
     this.lastSegment = ''
+    this.activeBackend = null
     this.overlay.setInterim('')
     this.overlay.hide()
+    this.stateChanged$.next()
+  }
+
+  private async resolveConfigSecrets (cfg: VoiceDictationConfig): Promise<VoiceDictationConfig> {
+    const resolved = { ...cfg }
+    if (this.vault.isEnabled() && this.vault.isOpen()) {
+      const secret = await this.vault.getSecret('voice-dictation:elevenlabs-api-key', { id: 'default' })
+      if (secret) {
+        resolved.elevenLabsApiKey = secret.value
+      }
+    }
+    return resolved
   }
 
   private getConfig (): VoiceDictationConfig {
@@ -309,7 +374,9 @@ export class VoiceDictationService {
   private handleError (error: unknown): void {
     const message = error instanceof Error ? error.message : String(error)
     this.logger.error(message)
-    this.elevenLabs.cancel()
+    for (const backend of Object.values(this.streamingBackends)) {
+      backend.cancel()
+    }
     this.overlay.show(message, { error: true })
     setTimeout(() => this.overlay.hide(), 4000)
     this.running = false
