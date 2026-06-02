@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core'
 import { ConfigService, HotkeysService, LogService, Logger, SelectorService } from 'tabby-core'
 import { VoiceDictationConfig, DEFAULT_VOICE_CONFIG } from './types'
-import { formatTranscript, formatPartial, reconcileKeystrokes } from './transcriptFormatter'
+import { formatTranscript, formatPartial, reconcileKeystrokes, detectScratchThat } from './transcriptFormatter'
 import { TerminalInjectorService } from './terminalInjector'
 import { WebSpeechBackend } from './webSpeechBackend'
 import { ExternalCommandBackend } from './externalCommandBackend'
@@ -17,6 +17,10 @@ export class VoiceDictationService {
   // Text typed into the terminal for the current (uncommitted) utterance when
   // live partial streaming is enabled, so revisions can be reconciled in place.
   private liveTyped = ''
+  // The text (including trailing space) that was appended to the terminal on
+  // the most recently committed normal utterance. Used by "scratch that" / "undo"
+  // to erase the previous segment in addition to clearing the current partial.
+  private lastSegment = ''
   private webSpeech = new WebSpeechBackend()
   private externalCommand = new ExternalCommandBackend()
   private elevenLabs = new ElevenLabsBackend()
@@ -125,6 +129,7 @@ export class VoiceDictationService {
     this.streaming = true
     this.streamTab = targetTab
     this.liveTyped = ''
+    this.lastSegment = ''
     if (cfg.showStatusOverlay) {
       this.overlay.show('Listening', { busy: true })
     }
@@ -141,12 +146,21 @@ export class VoiceDictationService {
         }
       },
       onCommitted: text => {
+        if (detectScratchThat(text)) {
+          this.applyScratchThat()
+          if (cfg.showStatusOverlay) {
+            this.overlay.setInterim('')
+          }
+          return
+        }
         if (cfg.elevenLabsStreamPartials) {
           this.streamLive(text, cfg, true)
         } else {
           const formatted = formatTranscript(text, { ...cfg, insertMode: 'insertOnly' })
           if (formatted) {
             this.injector.sendToTerminal(this.streamTab, formatted)
+            // Record for "scratch that" undo (best-effort in commit-only mode).
+            this.lastSegment = formatted
           }
         }
         if (cfg.showStatusOverlay) {
@@ -173,10 +187,33 @@ export class VoiceDictationService {
     }
     this.liveTyped = desired
     if (finalize) {
-      if (cfg.appendSpace && desired) {
-        this.injector.sendToTerminal(this.streamTab, ' ')
+      const trailingSpace = cfg.appendSpace && desired ? ' ' : ''
+      if (trailingSpace) {
+        this.injector.sendToTerminal(this.streamTab, trailingSpace)
       }
+      // Record the segment we just committed so "scratch that" can undo it.
+      this.lastSegment = desired + trailingSpace
       this.liveTyped = ''
+    }
+  }
+
+  // Erase the "scratch that" / "undo" command text AND the previous segment.
+  // In live-streaming mode (elevenLabsStreamPartials = true): the partial
+  // callbacks already typed the command words into the terminal (stored in
+  // liveTyped), so we first erase all of liveTyped, then also erase lastSegment
+  // (the finalized text from the utterance just before this one).
+  // In commit-only mode: liveTyped is always '', but we still erase lastSegment
+  // that was inserted on the previous committed utterance.
+  private applyScratchThat (): void {
+    // Erase the command text that partials typed into the terminal.
+    if (this.liveTyped.length > 0) {
+      this.injector.sendToTerminal(this.streamTab, '\x7f'.repeat(this.liveTyped.length))
+      this.liveTyped = ''
+    }
+    // Also erase the previous finalized segment (that's what "scratch that" means).
+    if (this.lastSegment.length > 0) {
+      this.injector.sendToTerminal(this.streamTab, '\x7f'.repeat(this.lastSegment.length))
+      this.lastSegment = ''
     }
   }
 
@@ -248,6 +285,7 @@ export class VoiceDictationService {
     this.streaming = false
     this.streamTab = null
     this.liveTyped = ''
+    this.lastSegment = ''
     this.overlay.setInterim('')
     this.overlay.hide()
   }
