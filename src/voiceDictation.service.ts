@@ -136,7 +136,10 @@ export class VoiceDictationService {
 
     await this.elevenLabs.start(cfg, {
       onPartial: text => {
-        if (cfg.elevenLabsStreamPartials) {
+        // Suppress live partial streaming when the terminal is in the alternate
+        // screen buffer (vim, less, htop …) — backspace-driven edits misbehave
+        // there.  Fall through to overlay-only display instead.
+        if (cfg.elevenLabsStreamPartials && !this.injector.isAltScreenActive(this.streamTab)) {
           this.streamLive(text, cfg, false)
         } else if (cfg.showStatusOverlay) {
           this.overlay.show(text)
@@ -153,9 +156,15 @@ export class VoiceDictationService {
           }
           return
         }
-        if (cfg.elevenLabsStreamPartials) {
+        if (cfg.elevenLabsStreamPartials && !this.injector.isAltScreenActive(this.streamTab)) {
+          // Normal live-streaming path: reconcile and finalize the utterance.
           this.streamLive(text, cfg, true)
         } else {
+          // Commit-only path: used when live partials are off OR when the
+          // terminal is in the alternate screen buffer.  No backspaces emitted.
+          // In alt-screen mode liveTyped is always '' (partials were skipped),
+          // so we can safely reset it here without touching the terminal.
+          this.liveTyped = ''
           const formatted = formatTranscript(text, { ...cfg, insertMode: 'insertOnly' })
           if (formatted) {
             this.injector.sendToTerminal(this.streamTab, formatted)
