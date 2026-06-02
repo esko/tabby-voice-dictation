@@ -96,7 +96,7 @@ export class ExternalCommandBackend {
       if (pid) {
         try {
           process.kill(-pid, 'SIGTERM')
-        } catch (e) {
+        } catch (_e) {
           try {
             this.child.kill('SIGTERM')
           } catch (_) {}
