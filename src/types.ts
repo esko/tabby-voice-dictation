@@ -14,6 +14,7 @@ export interface VoiceDictationConfig {
   elevenLabsApiKey: string
   elevenLabsNoiseGate: boolean
   elevenLabsStreamPartials: boolean
+  elevenLabsInputDeviceId: string
   activation: Activation
 }
 
@@ -29,5 +30,6 @@ export const DEFAULT_VOICE_CONFIG: VoiceDictationConfig = {
   elevenLabsApiKey: '',
   elevenLabsNoiseGate: true,
   elevenLabsStreamPartials: true,
+  elevenLabsInputDeviceId: '',
   activation: 'toggle',
 }

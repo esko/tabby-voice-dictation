@@ -59,6 +59,7 @@ const baseConfig: VoiceDictationConfig = {
   elevenLabsApiKey: '',
   elevenLabsNoiseGate: true,
   elevenLabsStreamPartials: true,
+  elevenLabsInputDeviceId: '',
   activation: 'toggle',
 }
 

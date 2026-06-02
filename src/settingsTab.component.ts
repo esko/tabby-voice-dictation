@@ -1,4 +1,4 @@
-import { Component, Injectable } from '@angular/core'
+import { Component, Injectable, OnInit } from '@angular/core'
 import { ConfigService, BaseComponent } from 'tabby-core'
 import { SettingsTabProvider } from 'tabby-settings'
 
@@ -48,6 +48,19 @@ import { SettingsTabProvider } from 'tabby-settings'
           <label class="form-check-label" for="elevenLabsNoiseGate">
             Client-side noise gate (skip near-silent audio chunks before sending)
           </label>
+        </div>
+
+        <div class="form-group mb-3" *ngIf="config.store.voiceDictation.backend === 'elevenLabs'">
+          <label>Microphone</label>
+          <select class="form-control" [(ngModel)]="config.store.voiceDictation.elevenLabsInputDeviceId" (ngModelChange)="save()">
+            <option value="">System default</option>
+            <option *ngFor="let device of audioInputDevices; let i = index" [value]="device.deviceId">
+              {{ device.label || 'Microphone ' + (i + 1) }}
+            </option>
+          </select>
+          <small class="form-text text-muted">
+            Device labels are only shown after microphone permission has been granted once.
+          </small>
         </div>
 
         <div class="form-text text-muted mb-3" *ngIf="config.store.voiceDictation.backend === 'elevenLabs'">
@@ -105,11 +118,20 @@ import { SettingsTabProvider } from 'tabby-settings'
     </div>
   `
 })
-export class VoiceDictationSettingsTabComponent extends BaseComponent {
+export class VoiceDictationSettingsTabComponent extends BaseComponent implements OnInit {
+  audioInputDevices: MediaDeviceInfo[] = []
+
   constructor (
     public config: ConfigService,
   ) {
     super()
+  }
+
+  async ngOnInit (): Promise<void> {
+    if (navigator?.mediaDevices?.enumerateDevices) {
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      this.audioInputDevices = devices.filter(d => d.kind === 'audioinput')
+    }
   }
 
   save () {

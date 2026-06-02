@@ -99,7 +99,13 @@ export class ElevenLabsBackend {
 
   private async startAudioPipeline (config: VoiceDictationConfig): Promise<void> {
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, sampleRate: SAMPLE_RATE, echoCancellation: true, noiseSuppression: true },
+      audio: {
+        deviceId: config.elevenLabsInputDeviceId ? { exact: config.elevenLabsInputDeviceId } : undefined,
+        channelCount: 1,
+        sampleRate: SAMPLE_RATE,
+        echoCancellation: true,
+        noiseSuppression: true,
+      },
     }).catch((e: Error) => {
       throw new Error(`Microphone unavailable: ${e.message || e.name}`)
     })
