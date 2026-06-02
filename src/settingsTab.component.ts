@@ -36,6 +36,22 @@ import { SettingsTabProvider } from 'tabby-settings'
           </small>
         </div>
 
+        <div class="form-group mb-3" *ngIf="config.store.voiceDictation.backend === 'elevenLabs'">
+          <label>Language Lock</label>
+          <input type="text" class="form-control" placeholder="auto-detect" [(ngModel)]="config.store.voiceDictation.elevenLabsLanguage" (ngModelChange)="save()" />
+          <small class="form-text text-muted">
+            Optional ISO language code (e.g. <code>en</code>, <code>es</code>, <code>fi</code>). Leave blank to auto-detect the spoken language (multilingual).
+          </small>
+        </div>
+
+        <div class="form-group mb-3" *ngIf="config.store.voiceDictation.backend === 'elevenLabs'">
+          <label>Keyterms</label>
+          <input type="text" class="form-control" [(ngModel)]="config.store.voiceDictation.elevenLabsKeyterms" (ngModelChange)="save()" />
+          <small class="form-text text-muted">
+            Comma-separated terms to bias recognition toward (e.g. <code>kubectl, nginx, Tabby</code>). Useful for technical jargon and command names.
+          </small>
+        </div>
+
         <div class="form-check mb-3" *ngIf="config.store.voiceDictation.backend === 'elevenLabs'">
           <input type="checkbox" class="form-check-input" id="elevenLabsStreamPartials" [(ngModel)]="config.store.voiceDictation.elevenLabsStreamPartials" (ngModelChange)="save()" />
           <label class="form-check-label" for="elevenLabsStreamPartials">

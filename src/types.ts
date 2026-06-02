@@ -44,4 +44,6 @@ export const DEFAULT_VOICE_CONFIG: VoiceDictationConfig = {
   activation: 'toggle',
   dictationMode: 'prose',
   spokenPunctuation: false,
+  elevenLabsLanguage: '',
+  elevenLabsKeyterms: '',
 }
