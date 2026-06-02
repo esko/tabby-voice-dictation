@@ -1,5 +1,5 @@
 import { Component, Injectable, OnInit } from '@angular/core'
-import { ConfigService, BaseComponent } from 'tabby-core'
+import { ConfigService, BaseComponent, VaultService } from 'tabby-core'
 import { SettingsTabProvider } from 'tabby-settings'
 
 @Component({
@@ -30,9 +30,15 @@ import { SettingsTabProvider } from 'tabby-settings'
 
         <div class="form-group mb-3" *ngIf="config.store.voiceDictation.backend === 'elevenLabs'">
           <label>ElevenLabs API Key</label>
-          <input type="password" class="form-control" autocomplete="off" [(ngModel)]="config.store.voiceDictation.elevenLabsApiKey" (ngModelChange)="save()" />
-          <small class="form-text text-muted">
+          <input type="password" class="form-control" autocomplete="off" [(ngModel)]="elevenLabsApiKey" (ngModelChange)="save()" />
+          <small class="form-text text-muted" *ngIf="!vault.isEnabled()">
             Stored in plain text in your Tabby <code>config.yaml</code>. Used to mint a single-use realtime token.
+          </small>
+          <small class="form-text text-muted" *ngIf="vault.isEnabled() && vault.isOpen()">
+            Stored securely in Tabby's encrypted Vault.
+          </small>
+          <small class="form-text text-muted" *ngIf="vault.isEnabled() && !vault.isOpen()">
+            Vault is locked. Storing in plain text config until unlocked.
           </small>
         </div>
 
@@ -132,6 +138,14 @@ import { SettingsTabProvider } from 'tabby-settings'
         </div>
 
         <div class="form-group mb-3">
+          <label>Silence Auto-Stop Timeout (seconds)</label>
+          <input type="number" class="form-control" placeholder="0" [(ngModel)]="config.store.voiceDictation.silenceTimeout" (ngModelChange)="save()" />
+          <small class="form-text text-muted">
+            Automatically stop the streaming session after N seconds of silence. Set to 0 to disable.
+          </small>
+        </div>
+
+        <div class="form-group mb-3">
           <label>Dictation Mode</label>
           <select class="form-control" [(ngModel)]="config.store.voiceDictation.dictationMode" (ngModelChange)="save()">
             <option value="prose">Prose (preserve natural casing and punctuation)</option>
@@ -154,9 +168,11 @@ import { SettingsTabProvider } from 'tabby-settings'
 })
 export class VoiceDictationSettingsTabComponent extends BaseComponent implements OnInit {
   audioInputDevices: MediaDeviceInfo[] = []
+  elevenLabsApiKey = ''
 
   constructor (
     public config: ConfigService,
+    public vault: VaultService,
   ) {
     super()
   }
@@ -166,9 +182,52 @@ export class VoiceDictationSettingsTabComponent extends BaseComponent implements
       const devices = await navigator.mediaDevices.enumerateDevices()
       this.audioInputDevices = devices.filter(d => d.kind === 'audioinput')
     }
+
+    await this.loadApiKey()
+
+    this.subscribeUntilDestroyed(this.config.changed$, () => {
+      this.loadApiKey()
+    })
+    this.subscribeUntilDestroyed(this.vault.contentChanged$, () => {
+      this.loadApiKey()
+    })
+    this.subscribeUntilDestroyed(this.vault.ready$, () => {
+      this.loadApiKey()
+    })
   }
 
-  save () {
+  async loadApiKey () {
+    if (this.vault.isEnabled() && this.vault.isOpen()) {
+      const secret = await this.vault.getSecret('voice-dictation:elevenlabs-api-key', { id: 'default' })
+      if (secret) {
+        this.elevenLabsApiKey = secret.value
+        // If there's also a plaintext config value, migrate it (delete from config)
+        if (this.config.store.voiceDictation.elevenLabsApiKey) {
+          this.config.store.voiceDictation.elevenLabsApiKey = ''
+          this.config.save()
+        }
+        return
+      }
+    }
+    // Fall back to config
+    this.elevenLabsApiKey = this.config.store.voiceDictation.elevenLabsApiKey || ''
+  }
+
+  async save () {
+    if (this.vault.isEnabled()) {
+      if (this.elevenLabsApiKey) {
+        await this.vault.addSecret({
+          type: 'voice-dictation:elevenlabs-api-key',
+          key: { id: 'default' },
+          value: this.elevenLabsApiKey,
+        })
+      } else {
+        await this.vault.removeSecret('voice-dictation:elevenlabs-api-key', { id: 'default' })
+      }
+      this.config.store.voiceDictation.elevenLabsApiKey = ''
+    } else {
+      this.config.store.voiceDictation.elevenLabsApiKey = this.elevenLabsApiKey
+    }
     this.config.save()
   }
 }

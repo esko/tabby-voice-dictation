@@ -3,6 +3,23 @@ export type InsertMode = 'insertOnly' | 'preview' | 'submit'
 export type Activation = 'toggle' | 'pushToTalk'
 export type DictationMode = 'prose' | 'command'
 
+export interface StreamHandlers {
+  onPartial (text: string): void
+  onCommitted (text: string): void
+  onError (err: Error): void
+  onClose (): void
+  /** Live microphone amplitude (RMS, ~0–0.3 for speech) for UI feedback. */
+  onLevel? (level: number): void
+}
+
+export interface StreamingBackend {
+  isAvailable (): boolean
+  start (config: VoiceDictationConfig, handlers: StreamHandlers): Promise<void>
+  stop (): Promise<void>
+  cancel (): void
+}
+
+
 export interface VoiceDictationConfig {
   backend: VoiceBackend
   language: string
@@ -26,6 +43,7 @@ export interface VoiceDictationConfig {
   elevenLabsKeyterms?: string
   /** Drop committed segments below this confidence threshold (0 = off/disabled). */
   elevenLabsMinConfidence?: number
+  silenceTimeout?: number
 }
 
 export const DEFAULT_VOICE_CONFIG: VoiceDictationConfig = {
@@ -46,4 +64,5 @@ export const DEFAULT_VOICE_CONFIG: VoiceDictationConfig = {
   spokenPunctuation: false,
   elevenLabsLanguage: '',
   elevenLabsKeyterms: '',
+  silenceTimeout: 0,
 }

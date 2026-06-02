@@ -1,4 +1,4 @@
-import { VoiceDictationConfig } from './types'
+import { VoiceDictationConfig, StreamingBackend, StreamHandlers } from './types'
 import { float32ToPCM16, arrayBufferToBase64 } from './pcmUtils'
 import { buildWorkletSource } from './pcmWorklet'
 
@@ -8,15 +8,6 @@ const SAMPLE_RATE = 16000
 
 // Backoff delays (ms) for successive reconnect attempts.
 const RECONNECT_DELAYS = [400, 1000, 2000]
-
-export interface StreamHandlers {
-  onPartial (text: string): void
-  onCommitted (text: string): void
-  onError (err: Error): void
-  onClose (): void
-  /** Live microphone amplitude (RMS, ~0–0.3 for speech) for UI feedback. */
-  onLevel? (level: number): void
-}
 
 /**
  * ElevenLabs realtime speech-to-text backend (commit-streaming).
@@ -33,7 +24,7 @@ export interface StreamHandlers {
  * 1 s, 2 s).  If all attempts fail, `handlers.onError` is called and the
  * session is torn down.
  */
-export class ElevenLabsBackend {
+export class ElevenLabsBackend implements StreamingBackend {
   private ws: WebSocket | null = null
   private mediaStream: MediaStream | null = null
   private audioContext: AudioContext | null = null
