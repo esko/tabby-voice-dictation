@@ -114,6 +114,24 @@ import { SettingsTabProvider } from 'tabby-settings'
           <input type="checkbox" class="form-check-input" id="showStatusOverlay" [(ngModel)]="config.store.voiceDictation.showStatusOverlay" (ngModelChange)="save()" />
           <label class="form-check-label" for="showStatusOverlay">Show dictation status overlay in terminal</label>
         </div>
+
+        <div class="form-group mb-3">
+          <label>Dictation Mode</label>
+          <select class="form-control" [(ngModel)]="config.store.voiceDictation.dictationMode" (ngModelChange)="save()">
+            <option value="prose">Prose (preserve natural casing and punctuation)</option>
+            <option value="command">Command (lowercase, strip trailing period — biased for shell input)</option>
+          </select>
+          <small class="form-text text-muted">
+            Command mode lowercases the transcript and strips any trailing period added by the ASR engine.
+          </small>
+        </div>
+
+        <div class="form-check mb-3">
+          <input type="checkbox" class="form-check-input" id="spokenPunctuation" [(ngModel)]="config.store.voiceDictation.spokenPunctuation" (ngModelChange)="save()" />
+          <label class="form-check-label" for="spokenPunctuation">
+            Spoken Punctuation (convert "comma", "period", "question mark", etc. to their symbols)
+          </label>
+        </div>
       </div>
     </div>
   `

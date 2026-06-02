@@ -19,6 +19,64 @@ const COMMAND_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\s*\bescape\b/gi, '\x1b'],
 ]
 
+// Spoken punctuation rules.
+// attachLeft:  consume the space *before* the spoken word so the symbol hugs the left word.
+// attachRight: emit a space after the symbol so the next word is separated.
+// consumeRightSpace: also consume the space *after* the spoken word (for open-bracket style).
+type PunctuationRule = { pattern: RegExp; symbol: string; attachLeft: boolean; attachRight: boolean; consumeRightSpace?: boolean }
+
+const SPOKEN_PUNCTUATION_RULES: PunctuationRule[] = [
+  { pattern: /\b(?:comma)\b/gi,                              symbol: ',',  attachLeft: true,  attachRight: true },
+  { pattern: /\b(?:period|full stop)\b/gi,                   symbol: '.',  attachLeft: true,  attachRight: true },
+  { pattern: /\b(?:question mark)\b/gi,                      symbol: '?',  attachLeft: true,  attachRight: true },
+  { pattern: /\b(?:exclamation mark|exclamation point)\b/gi, symbol: '!',  attachLeft: true,  attachRight: true },
+  { pattern: /\b(?:colon)\b/gi,                              symbol: ':',  attachLeft: true,  attachRight: true },
+  { pattern: /\b(?:semicolon)\b/gi,                          symbol: ';',  attachLeft: true,  attachRight: true },
+  // open paren: no space before the symbol, consume the space after it (hugs the following word)
+  { pattern: /\b(?:open paren)\b/gi,                         symbol: '(',  attachLeft: false, attachRight: false, consumeRightSpace: true },
+  // close paren: hug the preceding word, keep a space after
+  { pattern: /\b(?:close paren)\b/gi,                        symbol: ')',  attachLeft: true,  attachRight: true },
+  // quote: keep surrounding spaces (the formatter will collapse later)
+  { pattern: /\b(?:quote)\b/gi,                              symbol: '"',  attachLeft: false, attachRight: false },
+]
+
+/**
+ * Detect whether the raw transcript is a "scratch that" / "undo" command.
+ */
+export function detectScratchThat (raw: string): boolean {
+  return /^\s*(?:scratch that|undo)\s*$/i.test(raw)
+}
+
+/**
+ * Apply spoken punctuation substitutions to text.
+ * Punctuation words are replaced with their symbol equivalents with
+ * appropriate space handling so the result reads naturally.
+ */
+function applySpokenPunctuation (text: string): string {
+  for (const rule of SPOKEN_PUNCTUATION_RULES) {
+    const src = rule.pattern.source
+    if (rule.attachLeft && rule.consumeRightSpace) {
+      // Hug left AND consume right space: \s*WORD\s* → symbol
+      text = text.replace(new RegExp('\\s*' + src + '\\s*', 'gi'), rule.symbol)
+    } else if (rule.attachLeft) {
+      // Eat the space before, emit space after if attachRight
+      text = text.replace(
+        new RegExp('\\s*' + src, 'gi'),
+        rule.attachRight ? rule.symbol + ' ' : rule.symbol,
+      )
+    } else if (rule.consumeRightSpace) {
+      // Keep any space before the word, consume the space after it
+      text = text.replace(new RegExp(src + '\\s*', 'gi'), rule.symbol)
+    } else {
+      // Just replace the spoken word with the symbol; natural spaces remain
+      text = text.replace(rule.pattern, rule.symbol)
+    }
+  }
+  // Collapse any double-spaces that substitutions may have left behind.
+  text = text.replace(/ {2,}/g, ' ').trim()
+  return text
+}
+
 export function formatTranscript (raw: string, config: VoiceDictationConfig): string {
   let text = raw.trim()
 
@@ -30,6 +88,16 @@ export function formatTranscript (raw: string, config: VoiceDictationConfig): st
     for (const [pattern, replacement] of COMMAND_REPLACEMENTS) {
       text = text.replace(pattern, replacement)
     }
+  }
+
+  if (config.spokenPunctuation ?? false) {
+    text = applySpokenPunctuation(text)
+  }
+
+  if ((config.dictationMode ?? 'prose') === 'command') {
+    text = text.toLowerCase()
+    // Strip a trailing period (ASR often adds one; unwanted for shell input)
+    text = text.replace(/\.\s*$/, '')
   }
 
   if (config.appendSpace && text && !/[\s\r\n\t]$/.test(text)) {
@@ -70,4 +138,23 @@ export function reconcileKeystrokes (prev: string, next: string): string {
   }
   const backspaces = '\x7f'.repeat(prev.length - i)
   return backspaces + next.slice(i)
+}
+
+/**
+ * Compute the keystrokes needed to erase the last word typed at the terminal
+ * prompt. Used to implement "scratch that" / "undo" during live streaming.
+ * `typed` is the text currently typed into the prompt (the liveTyped buffer).
+ * Returns a string of DEL (0x7f) characters to backspace the last word, plus
+ * the updated remaining text.
+ */
+export function scratchLastWord (typed: string): { keystrokes: string; remaining: string } {
+  // Trim trailing space added after a commit, then remove the last word.
+  const trimmed = typed.trimEnd()
+  const lastSpaceIdx = trimmed.lastIndexOf(' ')
+  const remaining = lastSpaceIdx >= 0 ? trimmed.slice(0, lastSpaceIdx + 1) : ''
+  const eraseCount = typed.length - remaining.length
+  return {
+    keystrokes: '\x7f'.repeat(eraseCount),
+    remaining,
+  }
 }

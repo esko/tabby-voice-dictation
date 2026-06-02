@@ -1,6 +1,7 @@
 export type VoiceBackend = 'elevenLabs' | 'webSpeech' | 'externalCommand'
 export type InsertMode = 'insertOnly' | 'preview' | 'submit'
 export type Activation = 'toggle' | 'pushToTalk'
+export type DictationMode = 'prose' | 'command'
 
 export interface VoiceDictationConfig {
   backend: VoiceBackend
@@ -16,6 +17,8 @@ export interface VoiceDictationConfig {
   elevenLabsStreamPartials: boolean
   elevenLabsInputDeviceId: string
   activation: Activation
+  dictationMode?: DictationMode
+  spokenPunctuation?: boolean
 }
 
 export const DEFAULT_VOICE_CONFIG: VoiceDictationConfig = {
@@ -32,4 +35,6 @@ export const DEFAULT_VOICE_CONFIG: VoiceDictationConfig = {
   elevenLabsStreamPartials: true,
   elevenLabsInputDeviceId: '',
   activation: 'toggle',
+  dictationMode: 'prose',
+  spokenPunctuation: false,
 }

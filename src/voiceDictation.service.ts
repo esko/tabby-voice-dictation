@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core'
 import { ConfigService, HotkeysService, LogService, Logger, SelectorService } from 'tabby-core'
 import { VoiceDictationConfig, DEFAULT_VOICE_CONFIG } from './types'
-import { formatTranscript, formatPartial, reconcileKeystrokes } from './transcriptFormatter'
+import { formatTranscript, formatPartial, reconcileKeystrokes, detectScratchThat, scratchLastWord } from './transcriptFormatter'
 import { TerminalInjectorService } from './terminalInjector'
 import { WebSpeechBackend } from './webSpeechBackend'
 import { ExternalCommandBackend } from './externalCommandBackend'
@@ -141,6 +141,13 @@ export class VoiceDictationService {
         }
       },
       onCommitted: text => {
+        if (detectScratchThat(text)) {
+          this.applyScratchThat()
+          if (cfg.showStatusOverlay) {
+            this.overlay.setInterim('')
+          }
+          return
+        }
         if (cfg.elevenLabsStreamPartials) {
           this.streamLive(text, cfg, true)
         } else {
@@ -178,6 +185,18 @@ export class VoiceDictationService {
       }
       this.liveTyped = ''
     }
+  }
+
+  // Erase the last word/phrase typed at the prompt in response to "scratch that"
+  // or "undo". This works both when live partials are enabled (uses liveTyped
+  // buffer so we know exactly what's on screen) and when they are off (best-effort:
+  // erases one word's worth of characters from the accumulated line input).
+  private applyScratchThat (): void {
+    const { keystrokes, remaining } = scratchLastWord(this.liveTyped)
+    if (keystrokes) {
+      this.injector.sendToTerminal(this.streamTab, keystrokes)
+    }
+    this.liveTyped = remaining
   }
 
   private async stopStreaming (): Promise<void> {
