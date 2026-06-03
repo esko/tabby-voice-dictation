@@ -5,24 +5,16 @@ import { TerminalInjectorService } from './terminalInjector'
 
 @Injectable()
 export class VoiceTerminalDecorator extends TerminalDecorator {
-  // Tracks alternate-screen state per tab so VoiceDictationService can suppress
-  // live partial streaming when a full-screen TUI (vim, less, htop …) is active.
-  private altScreenMap = new WeakMap<BaseTerminalTabComponent<any>, boolean>()
   private indicatorMap = new Map<BaseTerminalTabComponent<any>, HTMLElement>()
 
   constructor (
     // Constructing the service here ensures hotkey subscriptions are registered
     // once the terminal plugin is loaded.
     private voiceDictation: VoiceDictationService,
-    injector: TerminalInjectorService,
+    private injector: TerminalInjectorService,
   ) {
     super()
     this.injectStyles()
-    // Register this decorator with the injector so it can query alt-screen state.
-    // This breaks the DI cycle: Decorator → VoiceDictationService (leaf) and
-    // Decorator → TerminalInjectorService (leaf); TerminalInjectorService holds
-    // a nullable back-reference rather than declaring a DI dependency.
-    injector.setDecorator(this)
 
     // Listen to state changes from dictation service to update all tab indicators.
     this.voiceDictation.stateChanged$.subscribe(() => {
@@ -33,9 +25,11 @@ export class VoiceTerminalDecorator extends TerminalDecorator {
   }
 
   attach (tab: BaseTerminalTabComponent<any>): void {
+    // Feed alt-screen state to the injector so the dictation session can suppress
+    // live partial streaming when a full-screen TUI (vim, less, htop …) is active.
     // Initialise from the synchronous property (may already be true if tab
     // restores into alternate screen; defaults to false if property absent).
-    this.altScreenMap.set(tab, !!(tab as any).alternateScreenActive)
+    this.injector.setAltScreenActive(tab, !!(tab as any).alternateScreenActive)
 
     // Subscribe to the Observable so we stay up-to-date.  The base class
     // helper cancels the subscription automatically on detach().
@@ -43,7 +37,7 @@ export class VoiceTerminalDecorator extends TerminalDecorator {
       this.subscribeUntilDetached(
         tab,
         (tab as any).alternateScreenActive$.subscribe((active: boolean) => {
-          this.altScreenMap.set(tab, active)
+          this.injector.setAltScreenActive(tab, active)
         }),
       )
     }
@@ -71,18 +65,6 @@ export class VoiceTerminalDecorator extends TerminalDecorator {
     }
   }
 
-  /**
-   * Returns true when the given tab is currently displaying a full-screen TUI
-   * (i.e. the terminal is in the alternate screen buffer).
-   *
-   * Falls back to false if the tab is not tracked or the Tabby API did not
-   * expose alternateScreenActive$ — this keeps behaviour identical to today
-   * when detection is unavailable.
-   */
-  isAltScreenActive (tab: BaseTerminalTabComponent<any>): boolean {
-    return this.altScreenMap.get(tab) ?? false
-  }
-
   updateIndicatorState (tab: BaseTerminalTabComponent<any>): void {
     const el = this.indicatorMap.get(tab)
     if (!el) return
@@ -96,7 +78,7 @@ export class VoiceTerminalDecorator extends TerminalDecorator {
       indicator.remove()
       this.indicatorMap.delete(tab)
     }
-    this.altScreenMap.delete(tab)
+    this.injector.forgetTab(tab)
     super.detach(tab)
   }
 

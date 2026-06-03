@@ -1,6 +1,7 @@
 import { Component, Injectable, OnInit } from '@angular/core'
 import { ConfigService, BaseComponent, VaultService } from 'tabby-core'
 import { SettingsTabProvider } from 'tabby-settings'
+import { loadElevenLabsApiKey, saveElevenLabsApiKey } from './voiceConfig'
 
 @Component({
   template: `
@@ -221,37 +222,15 @@ export class VoiceDictationSettingsTabComponent extends BaseComponent implements
   }
 
   async loadApiKey () {
-    if (this.vault.isEnabled() && this.vault.isOpen()) {
-      const secret = await this.vault.getSecret('voice-dictation:elevenlabs-api-key', { id: 'default' })
-      if (secret) {
-        this.elevenLabsApiKey = secret.value
-        // If there's also a plaintext config value, migrate it (delete from config)
-        if (this.config.store.voiceDictation.elevenLabsApiKey) {
-          this.config.store.voiceDictation.elevenLabsApiKey = ''
-          this.config.save()
-        }
-        return
-      }
+    this.elevenLabsApiKey = await loadElevenLabsApiKey(this.config.store, this.vault)
+    if (this.vault.isEnabled() && this.vault.isOpen() && this.elevenLabsApiKey && this.config.store.voiceDictation.elevenLabsApiKey) {
+      this.config.store.voiceDictation.elevenLabsApiKey = ''
+      this.config.save()
     }
-    // Fall back to config
-    this.elevenLabsApiKey = this.config.store.voiceDictation.elevenLabsApiKey || ''
   }
 
   async save () {
-    if (this.vault.isEnabled()) {
-      if (this.elevenLabsApiKey) {
-        await this.vault.addSecret({
-          type: 'voice-dictation:elevenlabs-api-key',
-          key: { id: 'default' },
-          value: this.elevenLabsApiKey,
-        })
-      } else {
-        await this.vault.removeSecret('voice-dictation:elevenlabs-api-key', { id: 'default' })
-      }
-      this.config.store.voiceDictation.elevenLabsApiKey = ''
-    } else {
-      this.config.store.voiceDictation.elevenLabsApiKey = this.elevenLabsApiKey
-    }
+    await saveElevenLabsApiKey(this.config.store, this.vault, this.elevenLabsApiKey)
     this.config.save()
   }
 }
