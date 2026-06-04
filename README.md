@@ -27,7 +27,7 @@ A Tabby terminal plugin for hotkey-triggered voice dictation. Speak into your mi
 3. Set the **Speech Recognition Backend** to **ElevenLabs Realtime (Streaming)** (it already is by default).
 4. Paste your ElevenLabs API key into the **ElevenLabs API Key** field.
 
-   > **Security note:** the key is stored in plain text in Tabby's `config.yaml`. Encrypted vault storage is a planned future improvement. Treat `config.yaml` as a secret file.
+   > **Security note:** when Tabby's encrypted Vault is enabled and unlocked, the key is stored in the Vault and `config.yaml` holds an empty placeholder. Otherwise it is stored in plain text in `config.yaml` — treat that file as a secret.
 
 5. Open **Settings → Hotkeys** and bind `toggle-voice-dictation` to a key (for example `F9`). Also optionally bind `cancel-voice-dictation`.
 6. Open a terminal tab and press your hotkey. The status overlay appears and the plugin begins streaming. Speak — text types into the terminal in real time. Press the hotkey again to stop.
@@ -116,6 +116,12 @@ voiceDictation:
 ## Other backends
 
 For `externalCommand` setup examples (whisper.cpp, faster-whisper, local API bridge), see [docs/ASR_HELPERS.md](docs/ASR_HELPERS.md).
+
+## Project structure
+
+The plugin follows a ports-and-adapters layout. `DictationSession` owns the per-run lifecycle behind plain interface ports; `VoiceDictationService` is a thin Angular adapter. The ElevenLabs runtime is split into `audioPipeline` (mic/audio globals), `realtimeSocket` (WebSocket session + reconnect), and `realtimeProtocol` (pure message decoder). Terminal presence is consolidated in `terminalPresence`, with `terminalDecorator` pushing alt-screen state in.
+
+See [`CONTEXT.md`](CONTEXT.md) for the full module map, domain glossary, and architecture notes.
 
 ## Development
 
