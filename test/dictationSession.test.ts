@@ -8,11 +8,11 @@ const mockTabbyTerminal = {
 }
 
 const originalRequire = (Module.prototype as any).require
-;(Module.prototype as any).require = function (id: string) {
+;(Module.prototype as any).require = function (id: string, ...args: unknown[]) {
   if (id === 'tabby-terminal') {
     return mockTabbyTerminal
   }
-  return originalRequire.apply(this, arguments as any)
+  return originalRequire.apply(this, [id, ...args] as Parameters<typeof originalRequire>)
 }
 
 import {
@@ -86,7 +86,7 @@ class FakeStreamingBackend implements StreamingBackend {
 
 // ── Fake ports ────────────────────────────────────────────────────────────────
 
-interface ScheduleCall { fn: () => void; ms: number }
+interface ScheduleCall { fn: () => void; ms: number; canceled: boolean }
 
 interface FakeDeps {
   session: DictationSession
@@ -136,8 +136,8 @@ function makeDeps (cfgOverrides: Partial<VoiceDictationConfig> = {}): FakeDeps {
     sentTexts,
     sendResult: true,
     getActiveTab (): any { return this.activeTab },
-    isTerminalTab (t: any): boolean { return this.isTerminal },
-    isAltScreenActive (t: any): boolean { return this.altScreen },
+    isTerminalTab (_t: any): boolean { return this.isTerminal },
+    isAltScreenActive (_t: any): boolean { return this.altScreen },
     sendToTerminal (t: any, text: string): boolean {
       sentTexts.push(text)
       return this.sendResult
@@ -190,7 +190,11 @@ function makeDeps (cfgOverrides: Partial<VoiceDictationConfig> = {}): FakeDeps {
     backendRegistry,
     delivery: new TranscriptDelivery(),
     now: () => nowRef.value,
-    schedule: (fn, ms) => { schedules.push({ fn, ms }) },
+    schedule: (fn, ms) => {
+      const call: ScheduleCall = { fn, ms, canceled: false }
+      schedules.push(call)
+      return () => { call.canceled = true }
+    },
     onStateChange: () => { onStateChangeCount.value++ },
   }
 
@@ -444,7 +448,63 @@ describe('DictationSession', () => {
     })
   })
 
-  // 10. onStateChange callback
+  // 10. Double-start race guard
+  describe('double-start race guard', () => {
+    it('starting flag prevents a second backend start when two toggles race', async () => {
+      const d = makeDeps({ backend: 'elevenLabs', activation: 'toggle' })
+
+      // Fire two toggles without awaiting the first — they race across the async
+      // resolveSecrets boundary.  The starting guard should admit only the first.
+      const p1 = d.session.toggle(d.tab)
+      const p2 = d.session.toggle(d.tab)
+      await Promise.all([p1, p2])
+
+      assert.strictEqual(d.elevenLabs.startedConfigs.length, 1, 'backend start must be called exactly once')
+    })
+  })
+
+  // 11. Stale hide canceled on new session
+  describe('stale hide canceled on new session', () => {
+    it('cancels a wrong-tab pending hide when a real session starts afterward', async () => {
+      const d = makeDeps({ backend: 'elevenLabs', activation: 'toggle' })
+
+      // Wrong-tab refusal schedules a 2000ms hide.
+      d.terminal.isTerminal = false
+      await d.session.toggle(d.tab)
+      assert.strictEqual(d.schedules.length, 1)
+      assert.strictEqual(d.schedules[0].ms, 2000)
+
+      // Now allow terminals and start a real session — the pending hide must be canceled.
+      d.terminal.isTerminal = true
+      await d.session.toggle(d.tab)
+
+      assert.strictEqual(d.schedules[0].canceled, true, 'stale hide must be canceled when a new session starts')
+    })
+  })
+
+  // 12. Error-hide canceled when a new session starts
+  describe('error-hide canceled when a new session starts', () => {
+    it('cancels a silence-timeout error pending hide when a new session starts', async () => {
+      const d = makeDeps({ backend: 'elevenLabs', activation: 'toggle', silenceTimeout: 2 })
+
+      await d.session.toggle(d.tab)
+      const handlers = d.elevenLabs.capturedHandlers[0]
+
+      // Drive a silence-timeout error, which schedules a 4000ms hide.
+      d.nowRef.value = 1000 + 2001
+      handlers.onLevel!(0)
+
+      assert.strictEqual(d.schedules.length, 1)
+      assert.strictEqual(d.schedules[0].ms, 4000)
+
+      // Start a new streaming session — the error's pending hide must be canceled.
+      await d.session.toggle(d.tab)
+
+      assert.strictEqual(d.schedules[0].canceled, true, 'error hide must be canceled when a new session starts')
+    })
+  })
+
+  // 13. onStateChange callback
   describe('onStateChange callback', () => {
     it('fires onStateChange when starting a streaming session', async () => {
       const d = makeDeps({ backend: 'elevenLabs', activation: 'toggle' })

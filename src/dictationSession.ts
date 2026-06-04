@@ -57,8 +57,8 @@ export interface DictationSessionDeps {
   delivery?: TranscriptDelivery
   /** Monotonic-ish clock for silence-timeout accounting; defaults to Date.now. */
   now?: () => number
-  /** Deferred work (overlay auto-hide); defaults to setTimeout. */
-  schedule?: (fn: () => void, ms: number) => void
+  /** Deferred work (overlay auto-hide); returns a canceler. Defaults to setTimeout/clearTimeout. */
+  schedule?: (fn: () => void, ms: number) => (() => void)
   /** Notified whenever running/streaming/target state changes. */
   onStateChange?: () => void
 }
@@ -71,6 +71,7 @@ export interface DictationSessionDeps {
  */
 export class DictationSession {
   private running = false
+  private starting = false
   private streaming = false
   private streamTab: any = null
   private activeSession: BackendSession | null = null
@@ -78,6 +79,7 @@ export class DictationSession {
   // Guards against OS key-repeat: a held hotkey fires hotkey$ many times per
   // second; we act once on the first event and ignore the rest until release.
   private keyHeld = false
+  private cancelHide: (() => void) | null = null
 
   private readonly terminal: TerminalPort
   private readonly overlay: OverlayPort
@@ -87,7 +89,7 @@ export class DictationSession {
   private readonly backendRegistry: BackendSessionRegistry
   private readonly delivery: TranscriptDelivery
   private readonly now: () => number
-  private readonly schedule: (fn: () => void, ms: number) => void
+  private readonly schedule: (fn: () => void, ms: number) => (() => void)
   private readonly onStateChange: () => void
 
   constructor (deps: DictationSessionDeps) {
@@ -99,7 +101,7 @@ export class DictationSession {
     this.backendRegistry = deps.backendRegistry
     this.delivery = deps.delivery ?? new TranscriptDelivery()
     this.now = deps.now ?? (() => Date.now())
-    this.schedule = deps.schedule ?? ((fn, ms) => setTimeout(fn, ms))
+    this.schedule = deps.schedule ?? ((fn, ms) => { const id = setTimeout(fn, ms); return () => clearTimeout(id) })
     this.onStateChange = deps.onStateChange ?? (() => {})
   }
 
@@ -134,6 +136,9 @@ export class DictationSession {
   }
 
   async toggle (targetTab?: any): Promise<void> {
+    if (this.starting) {
+      return
+    }
     if (this.running) {
       if (this.streaming) {
         await this.stopStreaming()
@@ -157,17 +162,21 @@ export class DictationSession {
   // ── Run lifecycle ─────────────────────────────────────────────────────────
 
   private async start (targetTab?: any): Promise<void> {
-    if (!targetTab) {
-      targetTab = this.terminal.getActiveTab()
-    }
-    if (!this.terminal.isTerminalTab(targetTab)) {
-      this.logger.warn('Active tab is not a terminal tab; refusing to start dictation')
-      this.overlay.show('Open a terminal tab first', { error: true })
-      this.schedule(() => this.overlay.hide(), 2000)
+    if (this.running || this.starting) {
       return
     }
-
+    this.starting = true
     try {
+      if (!targetTab) {
+        targetTab = this.terminal.getActiveTab()
+      }
+      if (!this.terminal.isTerminalTab(targetTab)) {
+        this.logger.warn('Active tab is not a terminal tab; refusing to start dictation')
+        this.overlay.show('Focus a terminal tab to dictate', { error: true })
+        this.scheduleHide(2000)
+        return
+      }
+
       const cfg = await this.config.resolveSecrets(this.config.get())
       const session = this.backendRegistry.create(cfg)
 
@@ -179,6 +188,25 @@ export class DictationSession {
       await this.runOneShot(session, cfg, targetTab)
     } catch (err) {
       this.handleError(err)
+    } finally {
+      this.starting = false
+    }
+  }
+
+  // ── Overlay hide scheduling ───────────────────────────────────────────────
+
+  private scheduleHide (ms: number): void {
+    this.clearPendingHide()
+    this.cancelHide = this.schedule(() => {
+      this.cancelHide = null
+      this.overlay.hide()
+    }, ms)
+  }
+
+  private clearPendingHide (): void {
+    if (this.cancelHide) {
+      this.cancelHide()
+      this.cancelHide = null
     }
   }
 
@@ -187,6 +215,7 @@ export class DictationSession {
   // (preview/submit) does not apply here — committed chunks land live.
 
   private async startStreaming (session: BackendSession, cfg: VoiceDictationConfig, targetTab: any): Promise<void> {
+    this.clearPendingHide()
     this.activeSession = session
     this.running = true
     this.streaming = true
@@ -247,7 +276,7 @@ export class DictationSession {
           if (level > 0.008) {
             this.lastSpeechTime = this.now()
           } else if (this.now() - this.lastSpeechTime > cfg.silenceTimeout * 1000) {
-            this.handleError(new Error('Silence timeout reached'))
+            this.handleError(new Error('Stopped — no speech detected'))
           }
         }
       },
@@ -299,6 +328,7 @@ export class DictationSession {
   // ── One-shot backends (externalCommand / webSpeech) ───────────────────────
 
   private async runOneShot (session: BackendSession, cfg: VoiceDictationConfig, targetTab: any): Promise<void> {
+    this.clearPendingHide()
     this.activeSession = session
     this.running = true
     this.streamTab = targetTab
@@ -338,12 +368,13 @@ export class DictationSession {
       this.activeSession = null
       this.onStateChange()
       if (cfg.showStatusOverlay && !errorOccurred) {
-        this.schedule(() => this.overlay.hide(), 1000)
+        this.scheduleHide(1000)
       }
     }
   }
 
   private resetState (): void {
+    this.clearPendingHide()
     this.running = false
     this.streaming = false
     this.streamTab = null
@@ -359,7 +390,7 @@ export class DictationSession {
     this.logger.error(message)
     this.backendRegistry.cancelAll()
     this.overlay.show(message, { error: true })
-    this.schedule(() => this.overlay.hide(), 4000)
+    this.scheduleHide(4000)
     this.running = false
     this.streaming = false
     this.streamTab = null
