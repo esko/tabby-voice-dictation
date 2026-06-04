@@ -1,5 +1,11 @@
 import { BaseTerminalTabComponent } from 'tabby-terminal'
 
+/** The structural surface of a Tabby tab that terminal-target resolution touches. */
+export interface TerminalLikeTab {
+  focusedTab?: TerminalLikeTab
+  sendInput? (data: string): void
+}
+
 export function resolveFocusedTab (tab: any): any {
   while (tab && (tab as any).focusedTab) {
     tab = (tab as any).focusedTab

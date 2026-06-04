@@ -41,8 +41,6 @@ export interface VoiceDictationConfig {
   elevenLabsLanguage?: string
   /** Comma-separated list of keyterms to bias the model towards. */
   elevenLabsKeyterms?: string
-  /** Drop committed segments below this confidence threshold (0 = off/disabled). */
-  elevenLabsMinConfidence?: number
   silenceTimeout?: number
 }
 

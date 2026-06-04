@@ -1,7 +1,7 @@
 import * as assert from 'node:assert'
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import { ElevenLabsBackend } from '../src/elevenLabsBackend'
-import { VoiceDictationConfig, StreamHandlers } from '../src/types'
+import { VoiceDictationConfig } from '../src/types'
 
 // Mock classes for Browser/Electron audio and socket components
 class MockWebSocket {
@@ -96,22 +96,22 @@ class MockMediaStream {
 }
 
 class MockAudioWorklet {
-  async addModule(url: string) {
+  async addModule(_url: string) {
     return Promise.resolve()
   }
 }
 
 class MockAudioNode {
-  connect(target: any) {}
+  connect(_target: any) {}
   disconnect() {}
 }
 
 class MockAudioWorkletNode extends MockAudioNode {
   port = {
     onmessage: null as ((ev: any) => void) | null,
-    postMessage: (msg: any) => {},
+    postMessage: (_msg: any) => {},
   }
-  constructor(context: any, name: string) {
+  constructor(_context: any, _name: string) {
     super()
   }
 }
@@ -119,7 +119,7 @@ class MockAudioWorkletNode extends MockAudioNode {
 class MockAudioContext {
   audioWorklet = new MockAudioWorklet()
   destination = {}
-  createMediaStreamSource(stream: any) {
+  createMediaStreamSource(_stream: any) {
     return new MockAudioNode()
   }
   async close() {

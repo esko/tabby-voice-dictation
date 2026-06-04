@@ -8,11 +8,11 @@ const mockTabbyTerminal = {
 }
 
 const originalRequire = (Module.prototype as any).require
-;(Module.prototype as any).require = function (id: string) {
+;(Module.prototype as any).require = function (id: string, ...args: unknown[]) {
   if (id === 'tabby-terminal') {
     return mockTabbyTerminal
   }
-  return originalRequire.apply(this, arguments as any)
+  return originalRequire.apply(this, [id, ...args] as Parameters<typeof originalRequire>)
 }
 
 import { TerminalPresence, type PresenceLogger } from '../src/terminalPresence'

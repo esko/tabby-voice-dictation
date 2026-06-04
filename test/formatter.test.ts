@@ -27,7 +27,7 @@ const mockTabbyTerminal = {
 }
 
 const originalRequire = Module.prototype.require
-Module.prototype.require = function (id: string) {
+Module.prototype.require = function (id: string, ...args: unknown[]) {
   if (id === 'tabby-core') {
     return mockTabbyCore
   }
@@ -37,7 +37,7 @@ Module.prototype.require = function (id: string) {
   if (id === 'tabby-terminal') {
     return mockTabbyTerminal
   }
-  return originalRequire.apply(this, arguments as any)
+  return originalRequire.apply(this, [id, ...args] as Parameters<typeof originalRequire>)
 }
 
 // Now import the modules to test
@@ -219,7 +219,7 @@ describe('Terminal Injector Service', () => {
 
   it('should correctly query active tab and verify if it is terminal tab', () => {
     const mockTerminalTab = {
-      sendInput: (data: string) => {},
+      sendInput: (_data: string) => {},
     }
     const mockNonTerminalTab = {
       otherMethod: () => {},
