@@ -195,7 +195,7 @@ export class RealtimeSocket {
 
       ws.onerror = () => {
         if (!started) {
-          reject(new Error('ElevenLabs WebSocket connection error'))
+          reject(new Error("Couldn't connect to ElevenLabs"))
         }
       }
 
@@ -204,7 +204,7 @@ export class RealtimeSocket {
 
         if (!started) {
           // Failed before session_started — surface immediately.
-          reject(new Error(`ElevenLabs session closed before start (${code}${reason ? ' ' + reason : ''})`))
+          reject(new Error(`ElevenLabs closed the connection before starting (${code}${reason ? ' ' + reason : ''})`))
           return
         }
 
@@ -234,7 +234,7 @@ export class RealtimeSocket {
     if (delay === null) {
       // Exhausted all attempts.
       this.handlers.onFatal(new Error(
-        `ElevenLabs: WebSocket dropped and could not reconnect after ${RECONNECT_DELAYS.length} attempts`,
+        `Lost the ElevenLabs connection and couldn't reconnect after ${RECONNECT_DELAYS.length} attempts`,
       ))
       return
     }
@@ -258,15 +258,15 @@ export class RealtimeSocket {
     try {
       res = await fetch(TOKEN_URL, { method: 'POST', headers: { 'xi-api-key': apiKey } })
     } catch (e: any) {
-      throw new Error(`Network error fetching ElevenLabs token: ${e.message}`)
+      throw new Error(`Couldn't reach ElevenLabs — ${e.message}`)
     }
     if (!res.ok) {
       const body = await res.text().catch(() => '')
-      throw new Error(`ElevenLabs token request failed (HTTP ${res.status}): ${body.slice(0, 200)}`)
+      throw new Error(`ElevenLabs rejected the API key (HTTP ${res.status})${body ? ': ' + body.slice(0, 160) : ''}`)
     }
     const data = await res.json()
     if (!data.token) {
-      throw new Error('ElevenLabs token response did not contain a token')
+      throw new Error('ElevenLabs returned no auth token')
     }
     return data.token
   }

@@ -46,7 +46,7 @@ export class AudioPipeline {
         noiseSuppression: true,
       },
     }).catch((e: Error) => {
-      throw new Error(`Microphone unavailable: ${e.message || e.name}`)
+      throw new Error(`Can't access the microphone — ${e.message || e.name}`)
     })
     this.mediaStream = stream
 

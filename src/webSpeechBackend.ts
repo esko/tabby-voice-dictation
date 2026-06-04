@@ -10,7 +10,7 @@ export class WebSpeechBackend {
   dictate (config: VoiceDictationConfig): Promise<string> {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!SpeechRecognition) {
-      return Promise.reject(new Error('Web Speech API is not available in this Tabby/Electron runtime'))
+      return Promise.reject(new Error("Web Speech isn't available in this Tabby build"))
     }
 
     return new Promise((resolve, reject) => {
@@ -27,7 +27,7 @@ export class WebSpeechBackend {
       }
 
       recognition.onerror = (event: any) => {
-        reject(new Error(event?.error ?? 'Unknown speech recognition error'))
+        reject(new Error(event?.error ?? 'Speech recognition failed'))
       }
 
       recognition.onend = () => {

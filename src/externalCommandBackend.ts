@@ -17,7 +17,7 @@ export class ExternalCommandBackend {
   dictate (config: VoiceDictationConfig): Promise<string> {
     const childProcess = window.require?.('child_process')
     if (!childProcess) {
-      return Promise.reject(new Error('Node child_process is unavailable; cannot run external ASR command'))
+      return Promise.reject(new Error("Can't run the external command in this runtime"))
     }
 
     const command = expandHome(config.externalCommand)
@@ -37,7 +37,7 @@ export class ExternalCommandBackend {
         }
         settled = true
         this.killProcess()
-        reject(new Error(`External dictation command timed out after ${config.externalCommandTimeoutMs} ms`))
+        reject(new Error(`Dictation command timed out after ${config.externalCommandTimeoutMs} ms`))
       }, config.externalCommandTimeoutMs)
 
       try {
@@ -71,7 +71,7 @@ export class ExternalCommandBackend {
           this.child = null
 
           if (code !== 0) {
-            reject(new Error(stderr.trim() || `Command exited with code ${code}`))
+            reject(new Error(stderr.trim() || `Dictation command exited with code ${code}`))
             return
           }
 

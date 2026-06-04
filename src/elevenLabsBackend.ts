@@ -30,7 +30,7 @@ export class ElevenLabsBackend implements StreamingBackend {
       return
     }
     if (!config.elevenLabsApiKey) {
-      throw new Error('ElevenLabs API key is not set (Settings → Voice Dictation)')
+      throw new Error('Add your ElevenLabs API key in Settings → Voice Dictation')
     }
     this.handlers = handlers
     this.active = true
