@@ -22,7 +22,7 @@
     "build": "webpack --mode production",
     "watch": "webpack --mode development --watch",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src test --ext .ts",
     "test": "npm run typecheck && npx tsc --module commonjs --outDir dist-test && node --test dist-test/test/*.test.js",
     "package": "npm pack"
   },

@@ -151,6 +151,8 @@ export class StatusOverlayService {
         bottom: 30px;
         left: 30px;
         z-index: 99999;
+        /* Stay within the window so long errors never run off-screen. */
+        max-width: calc(100vw - 60px);
         display: flex;
         align-items: center;
         gap: 16px;
@@ -262,9 +264,14 @@ export class StatusOverlayService {
       }
       .vd-text {
         max-width: 340px;
+        /* Wrap long messages (e.g. errors) and clamp to a few lines so the card
+           grows fluidly instead of overflowing or truncating to one line. */
+        line-height: 1.35;
         overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        overflow-wrap: anywhere;
+        display: -webkit-box;
+        -webkit-line-clamp: 4;
+        -webkit-box-orient: vertical;
         text-shadow: 0 1px 2px rgba(0,0,0,0.4);
       }
       /* Animated typing-dots, shown only while busy/working */
